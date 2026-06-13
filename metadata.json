@@ -1,0 +1,6 @@
+{
+  "name": "GK Mirai",
+  "description": "Premium smart residential society management platform with Resident Portal and Admin Dashboard.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
