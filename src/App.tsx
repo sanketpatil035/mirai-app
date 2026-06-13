@@ -1,8 +1,8 @@
 import { useState, useEffect } from "react";
-import { 
-  Building2, 
-  MapPin, 
-  Bell, 
+import {
+  Building2,
+  MapPin,
+  Bell,
   Menu,
   X,
   Leaf
@@ -11,12 +11,12 @@ import { motion, AnimatePresence } from "motion/react";
 
 // Types and mock imports
 import { Notice, Complaint, AmenityBooking, ResidentUnit, ComplaintStatus } from "./types";
-import { 
-  initialFacilities, 
-  initialNotices, 
-  initialComplaints, 
-  initialBookings, 
-  initialResidentUnits 
+import {
+  initialFacilities,
+  initialNotices,
+  initialComplaints,
+  initialBookings,
+  initialResidentUnits
 } from "./data";
 
 // Components
@@ -24,6 +24,7 @@ import { LandingPage } from "./components/LandingPage";
 import { AboutUs } from "./components/AboutUs";
 import { ResidentPortal } from "./components/ResidentPortal";
 import { AdminDashboard } from "./components/AdminDashboard";
+import { api } from "./lib/api";
 
 export default function App() {
   // Navigation: "home" | "about" | "resident" | "admin"
@@ -56,94 +57,254 @@ export default function App() {
   // Mobile Menu State
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
-  // Sync state to local storage when changed
+  // Backend Connection Mode State
+  const [backendStatus, setBackendStatus] = useState<"checking" | "connected" | "local_fallback">("checking");
+  const [isLoading, setIsLoading] = useState(false);
+
+  // Sync state to local storage when changed (ONLY in offline mode)
   useEffect(() => {
-    localStorage.setItem("gkm_complaints", JSON.stringify(complaints));
-  }, [complaints]);
+    if (backendStatus === "local_fallback") {
+      localStorage.setItem("gkm_complaints", JSON.stringify(complaints));
+    }
+  }, [complaints, backendStatus]);
 
   useEffect(() => {
-    localStorage.setItem("gkm_bookings", JSON.stringify(bookings));
-  }, [bookings]);
+    if (backendStatus === "local_fallback") {
+      localStorage.setItem("gkm_bookings", JSON.stringify(bookings));
+    }
+  }, [bookings, backendStatus]);
 
   useEffect(() => {
-    localStorage.setItem("gkm_notices", JSON.stringify(notices));
-  }, [notices]);
+    if (backendStatus === "local_fallback") {
+      localStorage.setItem("gkm_notices", JSON.stringify(notices));
+    }
+  }, [notices, backendStatus]);
 
   useEffect(() => {
-    localStorage.setItem("gkm_residents", JSON.stringify(residents));
-  }, [residents]);
+    if (backendStatus === "local_fallback") {
+      localStorage.setItem("gkm_residents", JSON.stringify(residents));
+    }
+  }, [residents, backendStatus]);
+
+  // Probe backend server status and retrieve database records
+  useEffect(() => {
+    async function initDatabaseConnection() {
+      setIsLoading(true);
+      const isAlive = await api.checkBackendStatus();
+      if (isAlive) {
+        try {
+          const [fetchedNotices, fetchedComplaints, fetchedBookings, fetchedResidents] = await Promise.all([
+            api.getNotices(),
+            api.getComplaints(),
+            api.getBookings(),
+            api.getResidents()
+          ]);
+          setNotices(fetchedNotices);
+          setComplaints(fetchedComplaints);
+          setBookings(fetchedBookings);
+          setResidents(fetchedResidents);
+          setBackendStatus("connected");
+        } catch (e) {
+          console.error("Backend found online but failed to retrieve collections. Falling back to Local Storage mode", e);
+          setBackendStatus("local_fallback");
+        }
+      } else {
+        console.log("Spring Boot api is offline, operating in Local Storage mode.");
+        setBackendStatus("local_fallback");
+      }
+      setIsLoading(false);
+    }
+    initDatabaseConnection();
+  }, []);
 
   // Handle addition of complaint
-  const handleAddComplaint = (newComp: Complaint) => {
-    setComplaints(prev => [newComp, ...prev]);
+  const handleAddComplaint = async (newComp: Complaint) => {
+    if (backendStatus === "connected") {
+      try {
+        const saved = await api.createComplaint(newComp);
+        setComplaints(prev => [saved, ...prev]);
+      } catch (e) {
+        console.error("API failed to save complaint dynamically, falling back to local state updates", e);
+        setComplaints(prev => [newComp, ...prev]);
+      }
+    } else {
+      setComplaints(prev => [newComp, ...prev]);
+    }
   };
 
   // Handle addition of amenity booking
-  const handleAddBooking = (newBook: AmenityBooking) => {
-    setBookings(prev => [newBook, ...prev]);
+  const handleAddBooking = async (newBook: AmenityBooking) => {
+    if (backendStatus === "connected") {
+      try {
+        const saved = await api.createBooking(newBook);
+        setBookings(prev => [saved, ...prev]);
+      } catch (e) {
+        console.error("API failed to save booking dynamically, falling back to local state updates", e);
+        setBookings(prev => [newBook, ...prev]);
+      }
+    } else {
+      setBookings(prev => [newBook, ...prev]);
+    }
   };
 
   // Handle simulated billing clearance
-  const handlePayDues = (unitNo: string) => {
-    setResidents(prev => prev.map(res => {
-      if (res.flatNo === unitNo) {
-        return {
-          ...res,
-          duesStatus: "Paid",
-          lastPaymentDate: new Date().toISOString().split("T")[0]
-        };
+  const handlePayDues = async (unitNo: string) => {
+    const resident = residents.find(r => r.flatNo === unitNo);
+    if (resident && backendStatus === "connected") {
+      try {
+        const saved = await api.payResidentDues(resident.id);
+        setResidents(prev => prev.map(res => res.id === resident.id ? saved : res));
+      } catch (e) {
+        console.error("API failed to clear dues dynamically, falling back to local state updates", e);
+        setResidents(prev => prev.map(res => {
+          if (res.flatNo === unitNo) {
+            return {
+              ...res,
+              duesStatus: "Paid",
+              lastPaymentDate: new Date().toISOString().split("T")[0]
+            };
+          }
+          return res;
+        }));
       }
-      return res;
-    }));
+    } else {
+      setResidents(prev => prev.map(res => {
+        if (res.flatNo === unitNo) {
+          return {
+            ...res,
+            duesStatus: "Paid",
+            lastPaymentDate: new Date().toISOString().split("T")[0]
+          };
+        }
+        return res;
+      }));
+    }
   };
 
   // Admin: Update complaint status & optional admin comment
-  const handleUpdateComplaint = (id: string, status: ComplaintStatus, remarks?: string) => {
-    setComplaints(prev => prev.map(comp => {
-      if (comp.id === id) {
-        return {
-          ...comp,
-          status,
-          ...(remarks !== undefined && { adminRemarks: remarks })
-        };
+  const handleUpdateComplaint = async (id: string, status: ComplaintStatus, remarks?: string) => {
+    if (backendStatus === "connected") {
+      try {
+        let updated = await api.updateComplaintStatus(id, status);
+        if (remarks !== undefined) {
+          updated = await api.updateComplaintRemarks(id, remarks);
+        }
+        setComplaints(prev => prev.map(comp => comp.id === id ? updated : comp));
+      } catch (e) {
+        console.error("API failed to update complaint, falling back to local updates", e);
+        setComplaints(prev => prev.map(comp => {
+          if (comp.id === id) {
+            return {
+              ...comp,
+              status,
+              ...(remarks !== undefined && { adminRemarks: remarks })
+            };
+          }
+          return comp;
+        }));
       }
-      return comp;
-    }));
+    } else {
+      setComplaints(prev => prev.map(comp => {
+        if (comp.id === id) {
+          return {
+            ...comp,
+            status,
+            ...(remarks !== undefined && { adminRemarks: remarks })
+          };
+        }
+        return comp;
+      }));
+    }
   };
 
   // Admin: Update Amenity booking status (Approved / Rejected)
-  const handleUpdateBookingStatus = (id: string, status: "Approved" | "Rejected") => {
-    setBookings(prev => prev.map(book => {
-      if (book.id === id) {
-        return { ...book, status };
+  const handleUpdateBookingStatus = async (id: string, status: "Approved" | "Rejected") => {
+    if (backendStatus === "connected") {
+      try {
+        const updated = await api.updateBookingStatus(id, status);
+        setBookings(prev => prev.map(book => book.id === id ? updated : book));
+      } catch (e) {
+        console.error("API failed to update booking status, falling back to local updates", e);
+        setBookings(prev => prev.map(book => {
+          if (book.id === id) {
+            return { ...book, status };
+          }
+          return book;
+        }));
       }
-      return book;
-    }));
+    } else {
+      setBookings(prev => prev.map(book => {
+        if (book.id === id) {
+          return { ...book, status };
+        }
+        return book;
+      }));
+    }
   };
 
   // Admin: Launch new notice broadcast
-  const handlePublishNotice = (newNotice: Notice) => {
-    setNotices(prev => [newNotice, ...prev]);
+  const handlePublishNotice = async (newNotice: Notice) => {
+    if (backendStatus === "connected") {
+      try {
+        const saved = await api.createNotice(newNotice);
+        setNotices(prev => [saved, ...prev]);
+      } catch (e) {
+        console.error("API failed to publish notice dynamically, falling back to local updates", e);
+        setNotices(prev => [newNotice, ...prev]);
+      }
+    } else {
+      setNotices(prev => [newNotice, ...prev]);
+    }
   };
 
   // Admin: Toggle payment dues status for custom simulations
-  const handleToggleResidentDues = (id: string) => {
-    setResidents(prev => prev.map(res => {
-      if (res.id === id) {
-        const nextStatus = res.duesStatus === "Paid" ? "Unpaid" : "Paid";
-        return {
-          ...res,
-          duesStatus: nextStatus,
-          ...(nextStatus === "Paid" && { lastPaymentDate: new Date().toISOString().split("T")[0] })
-        };
+  const handleToggleResidentDues = async (id: string) => {
+    if (backendStatus === "connected") {
+      try {
+        const updated = await api.toggleResidentDues(id);
+        setResidents(prev => prev.map(res => res.id === id ? updated : res));
+      } catch (e) {
+        console.error("API failed to change dues status dynamically, falling back to local updates", e);
+        setResidents(prev => prev.map(res => {
+          if (res.id === id) {
+            const nextStatus = res.duesStatus === "Paid" ? "Unpaid" : "Paid";
+            return {
+              ...res,
+              duesStatus: nextStatus,
+              ...(nextStatus === "Paid" && { lastPaymentDate: new Date().toISOString().split("T")[0] })
+            };
+          }
+          return res;
+        }));
       }
-      return res;
-    }));
+    } else {
+      setResidents(prev => prev.map(res => {
+        if (res.id === id) {
+          const nextStatus = res.duesStatus === "Paid" ? "Unpaid" : "Paid";
+          return {
+            ...res,
+            duesStatus: nextStatus,
+            ...(nextStatus === "Paid" && { lastPaymentDate: new Date().toISOString().split("T")[0] })
+          };
+        }
+        return res;
+      }));
+    }
   };
 
   // Admin: Add new resident condo
-  const handleAddResident = (newRes: ResidentUnit) => {
-    setResidents(prev => [...prev, newRes]);
+  const handleAddResident = async (newRes: ResidentUnit) => {
+    if (backendStatus === "connected") {
+      try {
+        const saved = await api.enrollResidentUnit(newRes);
+        setResidents(prev => [...prev, saved]);
+      } catch (e) {
+        console.error("API failed to enroll resident, falling back to local updates", e);
+        setResidents(prev => [...prev, newRes]);
+      }
+    } else {
+      setResidents(prev => [...prev, newRes]);
+    }
   };
 
   // General: Handles Hero Section Quick action events
@@ -172,320 +333,343 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col justify-between font-sans text-slate-800 selection:bg-teal-100 selection:text-teal-900" id="applet-viewport">
-      
-      {/* Top Banner announcing simulated credentials */}
-      <div className="bg-slate-900 text-slate-300 py-2.5 px-4 text-xs font-medium border-b border-slate-800" id="simulation-banner">
-        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2.5">
-          <div className="flex items-center gap-1.5 text-[11px] uppercase tracking-wider font-mono">
-            <span className="h-2 w-2 rounded-full bg-teal-400 animate-pulse"></span>
-            <span>Simulation Panel Active</span>
-          </div>
-          
-          <div className="flex flex-wrap items-center gap-4">
-            <div className="flex items-center gap-2">
-              <span className="text-slate-400 text-[11px]">As Acting Identity:</span>
-              <select 
-                value={activeUnitNo}
-                onChange={(e) => {
-                  setActiveUnitNo(e.target.value);
-                  // Auto redirect to resident portal if switching flats for direct feedback
-                  if (activeTab !== "admin" && activeTab !== "resident") {
-                    setActiveTab("resident");
-                  }
-                }}
-                className="bg-slate-850 hover:bg-slate-800 text-white rounded-md border border-slate-700 px-2 py-1 text-[11px] font-mono focus:outline-hidden"
-                id="header-role-identity-picker"
-              >
-                <optgroup label="Select Resident Condo unit">
-                  {residents.map(res => (
-                    <option key={res.flatNo} value={res.flatNo}>
-                      Resident (Unit {res.flatNo} - {res.ownerName.split(" ")[0]})
-                    </option>
-                  ))}
-                </optgroup>
-              </select>
-            </div>
+      <div className="min-h-screen bg-slate-50 flex flex-col justify-between font-sans text-slate-800 selection:bg-teal-100 selection:text-teal-900" id="applet-viewport">
 
-            <button 
-              onClick={handleClearLocalStorageSimulation}
-              className="text-[10px] uppercase font-mono tracking-widest text-[#f87171] hover:text-[#ef4444] transition-colors"
-              title="Clear simulate database logs"
-            >
-              Reset Data Default
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Main Header navigation */}
-      <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-slate-100 shadow-xs" id="site-primary-header">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
-          
-          {/* Logo element */}
-          <div className="flex items-center gap-2.5 cursor-pointer" onClick={() => setActiveTab("home")} id="header-logo-container">
-            <div className="h-10 w-10 bg-teal-600 rounded-lg flex items-center justify-center text-white shadow-sm shadow-teal-600/10 hover:rotate-6 transition-transform">
-              <Leaf className="h-5 w-5" />
-            </div>
-            <div>
+        {/* Top Banner announcing simulated credentials */}
+        <div className="bg-slate-900 text-slate-300 py-2.5 px-4 text-xs font-medium border-b border-slate-800" id="simulation-banner">
+          <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2.5">
+            <div className="flex flex-wrap items-center gap-3 text-[11px] uppercase tracking-wider font-mono">
               <div className="flex items-center gap-1.5">
-                <span className="font-sans font-bold text-lg tracking-tight text-slate-900 leading-none">GK Mirai</span>
-                <span className="bg-teal-50 text-teal-800 text-[10px] font-bold px-1.5 py-0.5 rounded-sm border border-teal-200/50">SMART</span>
+                <span className="h-2 w-2 rounded-full bg-teal-400 animate-pulse"></span>
+                <span>Simulation Panel Active</span>
               </div>
-              <span className="text-[10px] tracking-widest text-slate-400 font-mono uppercase">Living Habitat</span>
+              <span className="text-slate-700 hidden sm:inline">|</span>
+              <div className="flex items-center gap-1.5">
+                {backendStatus === "checking" && (
+                    <>
+                      <span className="h-2 w-2 rounded-full bg-amber-500 animate-pulse"></span>
+                      <span className="text-amber-500 font-bold">Connecting H2 Database...</span>
+                    </>
+                )}
+                {backendStatus === "connected" && (
+                    <>
+                      <span className="h-2 w-2 rounded-full bg-[#10b981]"></span>
+                      <span className="text-[#10b981] font-bold">Connected: H2 Dynamic DB (Spring Boot Active)</span>
+                    </>
+                )}
+                {backendStatus === "local_fallback" && (
+                    <>
+                      <span className="h-2 w-2 rounded-full bg-[#f87171] animate-pulse"></span>
+                      <span className="text-[#f87171] font-bold" title="To utilize real Java backend: Start your Spring Boot application on port 8080.">Offline Mode: LocalStorage Fallback</span>
+                    </>
+                )}
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-4">
+              <div className="flex items-center gap-2">
+                <span className="text-slate-400 text-[11px]">As Acting Identity:</span>
+                <select
+                    value={activeUnitNo}
+                    onChange={(e) => {
+                      setActiveUnitNo(e.target.value);
+                      // Auto redirect to resident portal if switching flats for direct feedback
+                      if (activeTab !== "admin" && activeTab !== "resident") {
+                        setActiveTab("resident");
+                      }
+                    }}
+                    className="bg-slate-850 hover:bg-slate-800 text-white rounded-md border border-slate-700 px-2 py-1 text-[11px] font-mono focus:outline-hidden"
+                    id="header-role-identity-picker"
+                >
+                  <optgroup label="Select Resident Condo unit">
+                    {residents.map(res => (
+                        <option key={res.flatNo} value={res.flatNo}>
+                          Resident (Unit {res.flatNo} - {res.ownerName.split(" ")[0]})
+                        </option>
+                    ))}
+                  </optgroup>
+                </select>
+              </div>
+
+              <button
+                  onClick={handleClearLocalStorageSimulation}
+                  className="text-[10px] uppercase font-mono tracking-widest text-[#f87171] hover:text-[#ef4444] transition-colors"
+                  title="Clear simulate database logs"
+              >
+                Reset Data Default
+              </button>
             </div>
           </div>
-
-          {/* Desktop Navigation Link items */}
-          <nav className="hidden md:flex items-center gap-1.5" id="desktop-nav-links">
-            {[
-              { id: "home", label: "Home" },
-              { id: "about", label: "About GK Mirai" },
-              { id: "resident", label: "Resident Portal" },
-              { id: "admin", label: "Committee Admin Dashboard" },
-            ].map((link) => {
-              const isActive = activeTab === link.id;
-              return (
-                <button
-                  key={link.id}
-                  onClick={() => setActiveTab(link.id as any)}
-                  className={`px-4 py-2.5 rounded-xl text-xs font-semibold tracking-wider uppercase transition-all duration-200 ${
-                    isActive 
-                      ? "bg-teal-600 text-white shadow-sm" 
-                      : "text-slate-500 hover:text-slate-900 hover:bg-slate-50"
-                  }`}
-                  id={`nav-btn-${link.id}`}
-                >
-                  {link.label}
-                  {link.id === "resident" && (
-                    <span className="ml-1.5 inline-block h-1.5 w-1.5 rounded-full bg-teal-500 animate-pulse"></span>
-                  )}
-                </button>
-              );
-            })}
-          </nav>
-
-          {/* Right Action buttons */}
-          <div className="hidden md:flex items-center gap-3">
-            <button
-              onClick={() => {
-                setActiveTab("resident");
-                setTimeout(() => {
-                  const billsBtn = document.getElementById("tab-btn-bills");
-                  if (billsBtn) billsBtn.click();
-                }, 100);
-              }}
-              className="relative text-slate-600 hover:text-red-600 p-2.5 rounded-xl hover:bg-slate-50 transition-colors"
-              title="Maintenance Outstanding"
-            >
-              <Bell className="h-4 w-4" />
-              {residents.some(r => r.flatNo === activeUnitNo && r.duesStatus === "Unpaid") && (
-                <span className="absolute top-2 right-2 h-2.5 w-2.5 rounded-full bg-orange-500 ring-2 ring-white"></span>
-              )}
-            </button>
-            <button 
-              onClick={() => setActiveTab("resident")}
-              className="rounded-xl border border-slate-200 hover:border-slate-350 bg-white px-4 py-2.5 text-xs font-bold transition-all text-slate-700 hover:shadow-xs"
-            >
-              Access Portal
-            </button>
-          </div>
-
-          {/* Mobile Menu Icon */}
-          <button 
-            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            className="md:hidden p-2 text-slate-600 hover:bg-slate-50 rounded-xl"
-            id="mobile-menu-hamburger-btn"
-          >
-            {mobileMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
-          </button>
         </div>
 
-        {/* Mobile Navigation Dropdown Menu Box */}
-        <AnimatePresence>
-          {mobileMenuOpen && (
-            <motion.div 
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: "auto" }}
-              exit={{ opacity: 0, height: 0 }}
-              className="md:hidden border-t border-slate-100 bg-white overflow-hidden px-4 py-4 space-y-2"
-              id="mobile-nav-dropdown-box"
-            >
+        {/* Main Header navigation */}
+        <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-slate-100 shadow-xs" id="site-primary-header">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
+
+            {/* Logo element */}
+            <div className="flex items-center gap-2.5 cursor-pointer" onClick={() => setActiveTab("home")} id="header-logo-container">
+              <div className="h-10 w-10 bg-teal-600 rounded-lg flex items-center justify-center text-white shadow-sm shadow-teal-600/10 hover:rotate-6 transition-transform">
+                <Leaf className="h-5 w-5" />
+              </div>
+              <div>
+                <div className="flex items-center gap-1.5">
+                  <span className="font-sans font-bold text-lg tracking-tight text-slate-900 leading-none">GK Mirai</span>
+                  <span className="bg-teal-50 text-teal-800 text-[10px] font-bold px-1.5 py-0.5 rounded-sm border border-teal-200/50">SMART</span>
+                </div>
+                <span className="text-[10px] tracking-widest text-slate-400 font-mono uppercase">Living Habitat</span>
+              </div>
+            </div>
+
+            {/* Desktop Navigation Link items */}
+            <nav className="hidden md:flex items-center gap-1.5" id="desktop-nav-links">
               {[
                 { id: "home", label: "Home" },
                 { id: "about", label: "About GK Mirai" },
                 { id: "resident", label: "Resident Portal" },
-                { id: "admin", label: "Committee Admin" },
-              ].map((link) => (
-                <button
-                  key={link.id}
+                { id: "admin", label: "Committee Admin Dashboard" },
+              ].map((link) => {
+                const isActive = activeTab === link.id;
+                return (
+                    <button
+                        key={link.id}
+                        onClick={() => setActiveTab(link.id as any)}
+                        className={`px-4 py-2.5 rounded-xl text-xs font-semibold tracking-wider uppercase transition-all duration-200 ${
+                            isActive
+                                ? "bg-teal-600 text-white shadow-sm"
+                                : "text-slate-500 hover:text-slate-900 hover:bg-slate-50"
+                        }`}
+                        id={`nav-btn-${link.id}`}
+                    >
+                      {link.label}
+                      {link.id === "resident" && (
+                          <span className="ml-1.5 inline-block h-1.5 w-1.5 rounded-full bg-teal-500 animate-pulse"></span>
+                      )}
+                    </button>
+                );
+              })}
+            </nav>
+
+            {/* Right Action buttons */}
+            <div className="hidden md:flex items-center gap-3">
+              <button
                   onClick={() => {
-                    setActiveTab(link.id as any);
-                    setMobileMenuOpen(false);
+                    setActiveTab("resident");
+                    setTimeout(() => {
+                      const billsBtn = document.getElementById("tab-btn-bills");
+                      if (billsBtn) billsBtn.click();
+                    }, 100);
                   }}
-                  className={`w-full text-left px-4 py-3 rounded-xl text-xs font-semibold uppercase tracking-wider ${
-                    activeTab === link.id 
-                      ? "bg-slate-950 text-white" 
-                      : "text-slate-500 hover:bg-slate-50"
-                  }`}
-                  id={`mobile-nav-btn-${link.id}`}
+                  className="relative text-slate-600 hover:text-red-600 p-2.5 rounded-xl hover:bg-slate-50 transition-colors"
+                  title="Maintenance Outstanding"
+              >
+                <Bell className="h-4 w-4" />
+                {residents.some(r => r.flatNo === activeUnitNo && r.duesStatus === "Unpaid") && (
+                    <span className="absolute top-2 right-2 h-2.5 w-2.5 rounded-full bg-orange-500 ring-2 ring-white"></span>
+                )}
+              </button>
+              <button
+                  onClick={() => setActiveTab("resident")}
+                  className="rounded-xl border border-slate-200 hover:border-slate-350 bg-white px-4 py-2.5 text-xs font-bold transition-all text-slate-700 hover:shadow-xs"
+              >
+                Access Portal
+              </button>
+            </div>
+
+            {/* Mobile Menu Icon */}
+            <button
+                onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+                className="md:hidden p-2 text-slate-600 hover:bg-slate-50 rounded-xl"
+                id="mobile-menu-hamburger-btn"
+            >
+              {mobileMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
+            </button>
+          </div>
+
+          {/* Mobile Navigation Dropdown Menu Box */}
+          <AnimatePresence>
+            {mobileMenuOpen && (
+                <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: "auto" }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="md:hidden border-t border-slate-100 bg-white overflow-hidden px-4 py-4 space-y-2"
+                    id="mobile-nav-dropdown-box"
                 >
-                  {link.label}
-                </button>
-              ))}
-              <div className="pt-2 border-t border-slate-50 flex items-center justify-between text-xs text-slate-500 font-mono">
-                <span>Current Flat Active:</span>
-                <span className="font-bold text-teal-600">{activeUnitNo}</span>
+                  {[
+                    { id: "home", label: "Home" },
+                    { id: "about", label: "About GK Mirai" },
+                    { id: "resident", label: "Resident Portal" },
+                    { id: "admin", label: "Committee Admin" },
+                  ].map((link) => (
+                      <button
+                          key={link.id}
+                          onClick={() => {
+                            setActiveTab(link.id as any);
+                            setMobileMenuOpen(false);
+                          }}
+                          className={`w-full text-left px-4 py-3 rounded-xl text-xs font-semibold uppercase tracking-wider ${
+                              activeTab === link.id
+                                  ? "bg-slate-950 text-white"
+                                  : "text-slate-500 hover:bg-slate-50"
+                          }`}
+                          id={`mobile-nav-btn-${link.id}`}
+                      >
+                        {link.label}
+                      </button>
+                  ))}
+                  <div className="pt-2 border-t border-slate-50 flex items-center justify-between text-xs text-slate-500 font-mono">
+                    <span>Current Flat Active:</span>
+                    <span className="font-bold text-teal-600">{activeUnitNo}</span>
+                  </div>
+                </motion.div>
+            )}
+          </AnimatePresence>
+        </header>
+
+        {/* Primary Container space */}
+        <main className="flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10" id="main-content-flow-zone">
+
+          <AnimatePresence mode="wait">
+            {activeTab === "home" && (
+                <motion.div
+                    key="home"
+                    initial={{ opacity: 0, y: 15 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -15 }}
+                    transition={{ duration: 0.25 }}
+                >
+                  <LandingPage
+                      onQuickAction={handleQuickAction}
+                      onNavigateToAbout={() => {
+                        setActiveTab("about");
+                        window.scrollTo({ top: 0, behavior: "smooth" });
+                      }}
+                  />
+                </motion.div>
+            )}
+
+            {activeTab === "about" && (
+                <motion.div
+                    key="about"
+                    initial={{ opacity: 0, y: 15 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -15 }}
+                    transition={{ duration: 0.25 }}
+                >
+                  <AboutUs />
+                </motion.div>
+            )}
+
+            {activeTab === "resident" && (
+                <motion.div
+                    key="resident"
+                    initial={{ opacity: 0, y: 15 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -15 }}
+                    transition={{ duration: 0.25 }}
+                >
+                  <ResidentPortal
+                      complaints={complaints}
+                      bookings={bookings}
+                      notices={notices}
+                      residents={residents}
+                      activeUnitNo={activeUnitNo}
+                      onAddComplaint={handleAddComplaint}
+                      onAddBooking={handleAddBooking}
+                      onPayDues={handlePayDues}
+                  />
+                </motion.div>
+            )}
+
+            {activeTab === "admin" && (
+                <motion.div
+                    key="admin"
+                    initial={{ opacity: 0, y: 15 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -15 }}
+                    transition={{ duration: 0.25 }}
+                >
+                  <AdminDashboard
+                      complaints={complaints}
+                      bookings={bookings}
+                      notices={notices}
+                      residents={residents}
+                      onUpdateComplaint={handleUpdateComplaint}
+                      onUpdateBookingStatus={handleUpdateBookingStatus}
+                      onPublishNotice={handlePublishNotice}
+                      onToggleResidentDues={handleToggleResidentDues}
+                      onAddResident={handleAddResident}
+                  />
+                </motion.div>
+            )}
+          </AnimatePresence>
+
+        </main>
+
+        {/* Corporate Styled Footer */}
+        <footer className="bg-slate-900 text-slate-400 border-t border-slate-800 py-16" id="site-primary-footer">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 grid grid-cols-1 md:grid-cols-4 gap-10">
+
+            {/* Brand Col */}
+            <div className="space-y-4">
+              <div className="flex items-center gap-2 text-white">
+                <div className="h-8 w-8 bg-teal-600 rounded-lg flex items-center justify-center">
+                  <Leaf className="h-4.5 w-4.5" />
+                </div>
+                <span className="font-bold text-base tracking-tight">GK Mirai</span>
               </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </header>
-
-      {/* Primary Container space */}
-      <main className="flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10" id="main-content-flow-zone">
-        
-        <AnimatePresence mode="wait">
-          {activeTab === "home" && (
-            <motion.div
-              key="home"
-              initial={{ opacity: 0, y: 15 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -15 }}
-              transition={{ duration: 0.25 }}
-            >
-              <LandingPage 
-                onQuickAction={handleQuickAction} 
-                onNavigateToAbout={() => {
-                  setActiveTab("about");
-                  window.scrollTo({ top: 0, behavior: "smooth" });
-                }}
-              />
-            </motion.div>
-          )}
-
-          {activeTab === "about" && (
-            <motion.div
-              key="about"
-              initial={{ opacity: 0, y: 15 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -15 }}
-              transition={{ duration: 0.25 }}
-            >
-              <AboutUs />
-            </motion.div>
-          )}
-
-          {activeTab === "resident" && (
-            <motion.div
-              key="resident"
-              initial={{ opacity: 0, y: 15 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -15 }}
-              transition={{ duration: 0.25 }}
-            >
-              <ResidentPortal 
-                complaints={complaints}
-                bookings={bookings}
-                notices={notices}
-                residents={residents}
-                activeUnitNo={activeUnitNo}
-                onAddComplaint={handleAddComplaint}
-                onAddBooking={handleAddBooking}
-                onPayDues={handlePayDues}
-              />
-            </motion.div>
-          )}
-
-          {activeTab === "admin" && (
-            <motion.div
-              key="admin"
-              initial={{ opacity: 0, y: 15 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -15 }}
-              transition={{ duration: 0.25 }}
-            >
-              <AdminDashboard 
-                complaints={complaints}
-                bookings={bookings}
-                notices={notices}
-                residents={residents}
-                onUpdateComplaint={handleUpdateComplaint}
-                onUpdateBookingStatus={handleUpdateBookingStatus}
-                onPublishNotice={handlePublishNotice}
-                onToggleResidentDues={handleToggleResidentDues}
-                onAddResident={handleAddResident}
-              />
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-      </main>
-
-      {/* Corporate Styled Footer */}
-      <footer className="bg-slate-900 text-slate-400 border-t border-slate-800 py-16" id="site-primary-footer">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 grid grid-cols-1 md:grid-cols-4 gap-10">
-          
-          {/* Brand Col */}
-          <div className="space-y-4">
-            <div className="flex items-center gap-2 text-white">
-              <div className="h-8 w-8 bg-teal-600 rounded-lg flex items-center justify-center">
-                <Leaf className="h-4.5 w-4.5" />
-              </div>
-              <span className="font-bold text-base tracking-tight">GK Mirai</span>
-            </div>
-            <p className="text-xs leading-relaxed max-w-xs">
-              Bengaluru's premium smart residential housing society, integrating world-class green solar energy grids, efficient garbage compositing, and modern automated gate operations.
-            </p>
-            <p className="text-[10px] font-mono tracking-widest uppercase text-teal-400">Awarded Model Habitat</p>
-          </div>
-
-          {/* Links Col 1 */}
-          <div className="space-y-4 text-xs font-sans">
-            <h4 className="text-white font-bold tracking-wider uppercase font-mono text-[10px]">Society Hubs</h4>
-            <ul className="space-y-2.5">
-              <li><button onClick={() => setActiveTab("home")} className="hover:text-white transition-colors">Information Portal</button></li>
-              <li><button onClick={() => setActiveTab("about")} className="hover:text-white transition-colors">Vision, Mission & Goals</button></li>
-              <li><button onClick={() => setActiveTab("resident")} className="hover:text-white transition-colors">Amenities Slot Reservator</button></li>
-              <li><button onClick={() => setActiveTab("admin")} className="hover:text-white transition-colors">Administrative Command Center</button></li>
-            </ul>
-          </div>
-
-          {/* Links Col 2 */}
-          <div className="space-y-4 text-xs font-sans">
-            <h4 className="text-white font-bold tracking-wider uppercase font-mono text-[10px]">Security Integrations</h4>
-            <ul className="space-y-2.5">
-              <li><a href="#" className="hover:text-white transition-colors">MyGate RFID Smart Entry</a></li>
-              <li><a href="#" className="hover:text-white transition-colors">RFID FastPass Guest Generator</a></li>
-              <li><a href="#" className="hover:text-white transition-colors">CCTV Grid Command Center</a></li>
-              <li><a href="#" className="hover:text-white transition-colors">Cantonment Emergency Hotline</a></li>
-            </ul>
-          </div>
-
-          {/* Contact Col */}
-          <div className="space-y-4 text-xs">
-            <h4 className="text-white font-bold tracking-wider uppercase font-mono text-[10px]">Mailing Contacts</h4>
-            <div className="space-y-2 leading-relaxed">
-              <p className="flex items-start gap-2">
-                <MapPin className="h-4 w-4 text-teal-500 shrink-0 mt-0.5" />
-                <span>GK Mirai Smart Township, Outer Ring Rd, Sarjapur Cross, Bengaluru, Karnataka 560103</span>
+              <p className="text-xs leading-relaxed max-w-xs">
+                Bengaluru's premium smart residential housing society, integrating world-class green solar energy grids, efficient garbage compositing, and modern automated gate operations.
               </p>
-              <p>📞 +91 98765 00002</p>
-              <p>✉️ administration@gkmirai.com</p>
+              <p className="text-[10px] font-mono tracking-widest uppercase text-teal-400">Awarded Model Habitat</p>
+            </div>
+
+            {/* Links Col 1 */}
+            <div className="space-y-4 text-xs font-sans">
+              <h4 className="text-white font-bold tracking-wider uppercase font-mono text-[10px]">Society Hubs</h4>
+              <ul className="space-y-2.5">
+                <li><button onClick={() => setActiveTab("home")} className="hover:text-white transition-colors">Information Portal</button></li>
+                <li><button onClick={() => setActiveTab("about")} className="hover:text-white transition-colors">Vision, Mission & Goals</button></li>
+                <li><button onClick={() => setActiveTab("resident")} className="hover:text-white transition-colors">Amenities Slot Reservator</button></li>
+                <li><button onClick={() => setActiveTab("admin")} className="hover:text-white transition-colors">Administrative Command Center</button></li>
+              </ul>
+            </div>
+
+            {/* Links Col 2 */}
+            <div className="space-y-4 text-xs font-sans">
+              <h4 className="text-white font-bold tracking-wider uppercase font-mono text-[10px]">Security Integrations</h4>
+              <ul className="space-y-2.5">
+                <li><a href="#" className="hover:text-white transition-colors">MyGate RFID Smart Entry</a></li>
+                <li><a href="#" className="hover:text-white transition-colors">RFID FastPass Guest Generator</a></li>
+                <li><a href="#" className="hover:text-white transition-colors">CCTV Grid Command Center</a></li>
+                <li><a href="#" className="hover:text-white transition-colors">Cantonment Emergency Hotline</a></li>
+              </ul>
+            </div>
+
+            {/* Contact Col */}
+            <div className="space-y-4 text-xs">
+              <h4 className="text-white font-bold tracking-wider uppercase font-mono text-[10px]">Mailing Contacts</h4>
+              <div className="space-y-2 leading-relaxed">
+                <p className="flex items-start gap-2">
+                  <MapPin className="h-4 w-4 text-teal-500 shrink-0 mt-0.5" />
+                  <span>GK Mirai Smart Township, Outer Ring Rd, Sarjapur Cross, Bengaluru, Karnataka 560103</span>
+                </p>
+                <p>📞 +91 98765 00002</p>
+                <p>✉️ administration@gkmirai.com</p>
+              </div>
+            </div>
+
+          </div>
+
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-12 pt-8 border-t border-slate-800 text-center text-[11px] flex flex-col sm:flex-row justify-between gap-4">
+            <p>© 2026 GK Mirai Managing Committee (GK SmartLiving). All rights reserved.</p>
+            <div className="flex gap-4 justify-center">
+              <a href="#" className="hover:text-white transition-colors">Bylaws Agenda</a>
+              <a href="#" className="hover:text-white transition-colors">Security Rules</a>
+              <a href="#" className="hover:text-white transition-colors">Privacy and Data Protection</a>
             </div>
           </div>
-
-        </div>
-
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-12 pt-8 border-t border-slate-800 text-center text-[11px] flex flex-col sm:flex-row justify-between gap-4">
-          <p>© 2026 GK Mirai Managing Committee (GK SmartLiving). All rights reserved.</p>
-          <div className="flex gap-4 justify-center">
-            <a href="#" className="hover:text-white transition-colors">Bylaws Agenda</a>
-            <a href="#" className="hover:text-white transition-colors">Security Rules</a>
-            <a href="#" className="hover:text-white transition-colors">Privacy and Data Protection</a>
-          </div>
-        </div>
-      </footer>
-    </div>
+        </footer>
+      </div>
   );
 }
