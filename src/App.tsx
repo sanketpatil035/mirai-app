@@ -30,26 +30,11 @@ export default function App() {
   // Navigation: "home" | "about" | "resident" | "admin"
   const [activeTab, setActiveTab] = useState<"home" | "about" | "resident" | "admin">("home");
 
-  // State with LocalStorage fallbacks to simulate durable local persistence
-  const [complaints, setComplaints] = useState<Complaint[]>(() => {
-    const saved = localStorage.getItem("gkm_complaints");
-    return saved ? JSON.parse(saved) : initialComplaints;
-  });
-
-  const [bookings, setBookings] = useState<AmenityBooking[]>(() => {
-    const saved = localStorage.getItem("gkm_bookings");
-    return saved ? JSON.parse(saved) : initialBookings;
-  });
-
-  const [notices, setNotices] = useState<Notice[]>(() => {
-    const saved = localStorage.getItem("gkm_notices");
-    return saved ? JSON.parse(saved) : initialNotices;
-  });
-
-  const [residents, setResidents] = useState<ResidentUnit[]>(() => {
-    const saved = localStorage.getItem("gkm_residents");
-    return saved ? JSON.parse(saved) : initialResidentUnits;
-  });
+  // State loaded dynamically from the Spring Boot database
+  const [complaints, setComplaints] = useState<Complaint[]>([]);
+  const [bookings, setBookings] = useState<AmenityBooking[]>([]);
+  const [notices, setNotices] = useState<Notice[]>([]);
+  const [residents, setResidents] = useState<ResidentUnit[]>([]);
 
   // Active simulated Resident context unit
   const [activeUnitNo, setActiveUnitNo] = useState<string>("C-302"); // default
@@ -61,7 +46,7 @@ export default function App() {
   const [backendStatus, setBackendStatus] = useState<"checking" | "connected" | "local_fallback">("checking");
   const [isLoading, setIsLoading] = useState(false);
 
-  // Sync state to local storage when changed (ONLY in offline mode)
+  // Sync state to local storage when changed (ONLY in offline mode as a last-resort fallback)
   useEffect(() => {
     if (backendStatus === "local_fallback") {
       localStorage.setItem("gkm_complaints", JSON.stringify(complaints));
@@ -105,11 +90,25 @@ export default function App() {
           setResidents(fetchedResidents);
           setBackendStatus("connected");
         } catch (e) {
-          console.error("Backend found online but failed to retrieve collections. Falling back to Local Storage mode", e);
+          console.error("Backend found online but failed to retrieve collections. Falling back to local state", e);
           setBackendStatus("local_fallback");
         }
       } else {
-        console.log("Spring Boot api is offline, operating in Local Storage mode.");
+        console.log("Spring Boot API is offline, operating on local state.");
+        // Attempt to retrieve existing localStorage elements if available, but do not pre-populate with mock data
+        try {
+          const savedComplaints = localStorage.getItem("gkm_complaints");
+          const savedBookings = localStorage.getItem("gkm_bookings");
+          const savedNotices = localStorage.getItem("gkm_notices");
+          const savedResidents = localStorage.getItem("gkm_residents");
+
+          if (savedComplaints) setComplaints(JSON.parse(savedComplaints));
+          if (savedBookings) setBookings(JSON.parse(savedBookings));
+          if (savedNotices) setNotices(JSON.parse(savedNotices));
+          if (savedResidents) setResidents(JSON.parse(savedResidents));
+        } catch (err) {
+          console.error("Failed to parse local backup", err);
+        }
         setBackendStatus("local_fallback");
       }
       setIsLoading(false);
@@ -416,7 +415,7 @@ export default function App() {
                   <span className="font-sans font-bold text-lg tracking-tight text-slate-900 leading-none">GK Mirai</span>
                   <span className="bg-teal-50 text-teal-800 text-[10px] font-bold px-1.5 py-0.5 rounded-sm border border-teal-200/50">SMART</span>
                 </div>
-                <span className="text-[10px] tracking-widest text-slate-400 font-mono uppercase">Living Habitat</span>
+                <span className="text-[10px] tracking-widest text-slate-400 font-mono uppercase">Punawale</span>
               </div>
             </div>
 
