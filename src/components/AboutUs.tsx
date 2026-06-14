@@ -28,7 +28,7 @@ export function AboutUs() {
         </div>
         <div className="grid md:grid-cols-2 gap-8 items-start">
           <p className="text-sm text-slate-600 leading-relaxed font-sans">
-            GK Mirai represents the pinnacle of premium urban community design. Created as a collaborative space for intellectual minds and active families, GK Mirai is not just an apartment complex, but a holistic living hub. Spanned across 12 verdant acres in a prime high-tech zone, our complex comprises 8 towers enclosing lush botanical gardens, sports areas, and dynamic workspaces. At GK Mirai, we actively celebrate local diversity, running clean environment campaigns, running fitness circles, and driving local technology enhancements.
+            Mirai is an ideal place to live in Pune. The neighbourhood provides easy access to essential amenities such as schools, hospitals, shopping centres and other entertainment options while being well connected to the rest of the city and providing access to several public transport systems and other social infrastructure.
           </p>
           <div className="rounded-2xl border border-slate-100 bg-teal-50/50 p-6 space-y-4">
             <h3 className="font-sans font-bold text-slate-800 text-sm tracking-wider uppercase font-mono text-teal-700">Resident Demographics</h3>

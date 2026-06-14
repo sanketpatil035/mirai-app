@@ -5,7 +5,9 @@ import {
   Bell,
   Menu,
   X,
-  Leaf
+  Leaf,
+  Lock,
+  Unlock
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 
@@ -38,6 +40,34 @@ export default function App() {
 
   // Active simulated Resident context unit
   const [activeUnitNo, setActiveUnitNo] = useState<string>("C-302"); // default
+
+  // Admin Mode state (default false, loaded from localStorage)
+  const [isAdmin, setIsAdmin] = useState<boolean>(() => {
+    return localStorage.getItem("gkm_is_admin") === "true";
+  });
+  const [showAdminLoginModal, setShowAdminLoginModal] = useState(false);
+  const [adminPinInput, setAdminPinInput] = useState("");
+  const [loginError, setLoginError] = useState("");
+
+  const handleAdminLogin = (pin: string) => {
+    const validPins = ["1234", "admin", "admin123", "gkmirai"];
+    if (validPins.includes(pin.trim())) {
+      setIsAdmin(true);
+      localStorage.setItem("gkm_is_admin", "true");
+      setShowAdminLoginModal(false);
+      setAdminPinInput("");
+      setLoginError("");
+      setActiveTab("admin");
+    } else {
+      setLoginError("Invalid Admin PIN. Hint: Try 1234");
+    }
+  };
+
+  const handleAdminLogout = () => {
+    setIsAdmin(false);
+    localStorage.setItem("gkm_is_admin", "false");
+    setActiveTab("home");
+  };
 
   // Mobile Menu State
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -343,7 +373,7 @@ export default function App() {
                 <span>Simulation Panel Active</span>
               </div>
               <span className="text-slate-700 hidden sm:inline">|</span>
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-1.5 animate-fade-in">
                 {backendStatus === "checking" && (
                     <>
                       <span className="h-2 w-2 rounded-full bg-amber-500 animate-pulse"></span>
@@ -353,13 +383,27 @@ export default function App() {
                 {backendStatus === "connected" && (
                     <>
                       <span className="h-2 w-2 rounded-full bg-[#10b981]"></span>
-                      <span className="text-[#10b981] font-bold">Connected: H2 Dynamic DB (Spring Boot Active)</span>
+                      <span className="text-[#10b981] font-bold animate-pulse">Connected: Spring Boot H2</span>
                     </>
                 )}
                 {backendStatus === "local_fallback" && (
                     <>
                       <span className="h-2 w-2 rounded-full bg-[#f87171] animate-pulse"></span>
                       <span className="text-[#f87171] font-bold" title="To utilize real Java backend: Start your Spring Boot application on port 8080.">Offline Mode: LocalStorage Fallback</span>
+                    </>
+                )}
+              </div>
+              <span className="text-slate-700 hidden lg:inline">|</span>
+              <div className="flex items-center gap-1.5">
+                {isAdmin ? (
+                    <>
+                      <span className="h-2.5 w-2.5 rounded-full bg-teal-400"></span>
+                      <span className="text-teal-400 font-bold">Admin Authority: Yes</span>
+                    </>
+                ) : (
+                    <>
+                      <span className="h-2.5 w-2.5 rounded-full bg-slate-600"></span>
+                      <span className="text-slate-400">Admin Authority: Guest/Resident</span>
                     </>
                 )}
               </div>
@@ -425,7 +469,7 @@ export default function App() {
                 { id: "home", label: "Home" },
                 { id: "about", label: "About GK Mirai" },
                 { id: "resident", label: "Resident Portal" },
-                { id: "admin", label: "Committee Admin Dashboard" },
+                ...(isAdmin ? [{ id: "admin", label: "Committee Admin Dashboard" }] : []),
               ].map((link) => {
                 const isActive = activeTab === link.id;
                 return (
@@ -466,6 +510,25 @@ export default function App() {
                     <span className="absolute top-2 right-2 h-2.5 w-2.5 rounded-full bg-orange-500 ring-2 ring-white"></span>
                 )}
               </button>
+              {isAdmin ? (
+                  <button
+                      onClick={handleAdminLogout}
+                      className="rounded-xl border border-rose-200 hover:border-rose-300 bg-rose-50/50 px-4 py-2.5 text-xs font-bold transition-all text-rose-700 hover:shadow-xs flex items-center gap-1.5"
+                      title="Exit administrative mode security clearance"
+                  >
+                    <Unlock className="h-3.5 w-3.5" />
+                    Exit Admin
+                  </button>
+              ) : (
+                  <button
+                      onClick={() => setShowAdminLoginModal(true)}
+                      className="rounded-xl border border-slate-200 hover:border-teal-350 bg-white px-4 py-2.5 text-xs font-bold transition-all text-slate-700 hover:text-teal-750 hover:shadow-xs flex items-center gap-1.5"
+                      title="Authenticate as a Committee Admin member"
+                  >
+                    <Lock className="h-3.5 w-3.5 text-slate-400" />
+                    Admin Login
+                  </button>
+              )}
               <button
                   onClick={() => setActiveTab("resident")}
                   className="rounded-xl border border-slate-200 hover:border-slate-350 bg-white px-4 py-2.5 text-xs font-bold transition-all text-slate-700 hover:shadow-xs"
@@ -498,7 +561,7 @@ export default function App() {
                     { id: "home", label: "Home" },
                     { id: "about", label: "About GK Mirai" },
                     { id: "resident", label: "Resident Portal" },
-                    { id: "admin", label: "Committee Admin" },
+                    ...(isAdmin ? [{ id: "admin", label: "Committee Admin" }] : []),
                   ].map((link) => (
                       <button
                           key={link.id}
@@ -516,6 +579,29 @@ export default function App() {
                         {link.label}
                       </button>
                   ))}
+                  <div className="pt-2 border-t border-slate-100 flex flex-col gap-2">
+                    {isAdmin ? (
+                        <button
+                            onClick={() => {
+                              handleAdminLogout();
+                              setMobileMenuOpen(false);
+                            }}
+                            className="w-full text-center py-2.5 rounded-xl text-xs font-bold text-rose-600 bg-rose-50 border border-rose-100 uppercase tracking-wider"
+                        >
+                          Exit Admin Mode
+                        </button>
+                    ) : (
+                        <button
+                            onClick={() => {
+                              setShowAdminLoginModal(true);
+                              setMobileMenuOpen(false);
+                            }}
+                            className="w-full text-center py-2.5 rounded-xl text-xs font-bold text-slate-600 bg-slate-50 border border-slate-200 uppercase tracking-wider"
+                        >
+                          Admin Sign-In (PIN: 1234)
+                        </button>
+                    )}
+                  </div>
                   <div className="pt-2 border-t border-slate-50 flex items-center justify-between text-xs text-slate-500 font-mono">
                     <span>Current Flat Active:</span>
                     <span className="font-bold text-teal-600">{activeUnitNo}</span>
@@ -588,17 +674,35 @@ export default function App() {
                     exit={{ opacity: 0, y: -15 }}
                     transition={{ duration: 0.25 }}
                 >
-                  <AdminDashboard
-                      complaints={complaints}
-                      bookings={bookings}
-                      notices={notices}
-                      residents={residents}
-                      onUpdateComplaint={handleUpdateComplaint}
-                      onUpdateBookingStatus={handleUpdateBookingStatus}
-                      onPublishNotice={handlePublishNotice}
-                      onToggleResidentDues={handleToggleResidentDues}
-                      onAddResident={handleAddResident}
-                  />
+                  {isAdmin ? (
+                      <AdminDashboard
+                          complaints={complaints}
+                          bookings={bookings}
+                          notices={notices}
+                          residents={residents}
+                          onUpdateComplaint={handleUpdateComplaint}
+                          onUpdateBookingStatus={handleUpdateBookingStatus}
+                          onPublishNotice={handlePublishNotice}
+                          onToggleResidentDues={handleToggleResidentDues}
+                          onAddResident={handleAddResident}
+                      />
+                  ) : (
+                      <div className="max-w-md mx-auto my-12 bg-white rounded-3xl border border-slate-200 p-8 shadow-xl text-center" id="unauthorized-placeholder">
+                        <div className="h-16 w-16 bg-rose-50 text-rose-600 rounded-2xl flex items-center justify-center mx-auto mb-6">
+                          <Lock className="h-8 w-8" />
+                        </div>
+                        <h2 className="text-xl font-bold text-slate-900 mb-2">Unauthorized Entrance</h2>
+                        <p className="text-slate-500 text-sm mb-6 leading-relaxed">
+                          The Committee Command Center is restricted to authorized GK Mirai managing members. Please log in first.
+                        </p>
+                        <button
+                            onClick={() => setShowAdminLoginModal(true)}
+                            className="w-full py-3 bg-teal-600 hover:bg-teal-700 text-white font-semibold rounded-xl text-xs uppercase tracking-widest transition-all"
+                        >
+                          Authenticate credentials (PIN: 1234)
+                        </button>
+                      </div>
+                  )}
                 </motion.div>
             )}
           </AnimatePresence>
@@ -618,7 +722,7 @@ export default function App() {
                 <span className="font-bold text-base tracking-tight">GK Mirai</span>
               </div>
               <p className="text-xs leading-relaxed max-w-xs">
-                Bengaluru's premium smart residential housing society, integrating world-class green solar energy grids, efficient garbage compositing, and modern automated gate operations.
+                GK Mirai is an ideal place to live in Pune. The neighbourhood provides easy access to essential amenities such as schools, hospitals, shopping centres and other entertainment options while being well connected to the rest of the city and providing access to several public transport systems and other social infrastructure.
               </p>
               <p className="text-[10px] font-mono tracking-widest uppercase text-teal-400">Awarded Model Habitat</p>
             </div>
@@ -627,10 +731,12 @@ export default function App() {
             <div className="space-y-4 text-xs font-sans">
               <h4 className="text-white font-bold tracking-wider uppercase font-mono text-[10px]">Society Hubs</h4>
               <ul className="space-y-2.5">
-                <li><button onClick={() => setActiveTab("home")} className="hover:text-white transition-colors">Information Portal</button></li>
-                <li><button onClick={() => setActiveTab("about")} className="hover:text-white transition-colors">Vision, Mission & Goals</button></li>
-                <li><button onClick={() => setActiveTab("resident")} className="hover:text-white transition-colors">Amenities Slot Reservator</button></li>
-                <li><button onClick={() => setActiveTab("admin")} className="hover:text-white transition-colors">Administrative Command Center</button></li>
+                <li><button onClick={() => setActiveTab("home")} className="hover:text-white transition-colors text-left">Information Portal</button></li>
+                <li><button onClick={() => setActiveTab("about")} className="hover:text-white transition-colors text-left">Vision, Mission & Goals</button></li>
+                <li><button onClick={() => setActiveTab("resident")} className="hover:text-white transition-colors text-left">Amenities Slot Reservator</button></li>
+                {isAdmin && (
+                    <li><button onClick={() => setActiveTab("admin")} className="hover:text-white transition-colors text-left">Administrative Command Center</button></li>
+                )}
               </ul>
             </div>
 
@@ -651,9 +757,9 @@ export default function App() {
               <div className="space-y-2 leading-relaxed">
                 <p className="flex items-start gap-2">
                   <MapPin className="h-4 w-4 text-teal-500 shrink-0 mt-0.5" />
-                  <span>GK Mirai Smart Township, Outer Ring Rd, Sarjapur Cross, Bengaluru, Karnataka 560103</span>
+                  <span>GK Mirai, Punawale High St, near Zudio, Punvale Bazar, Punawale, Pimpri-Chinchwad, Maharashtra 411033</span>
                 </p>
-                <p>📞 +91 98765 00002</p>
+                <p>📞 +91 9800000000</p>
                 <p>✉️ administration@gkmirai.com</p>
               </div>
             </div>
@@ -669,6 +775,103 @@ export default function App() {
             </div>
           </div>
         </footer>
+
+        {/* Elegant Admin Password Overlay Modal */}
+        <AnimatePresence>
+          {showAdminLoginModal && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md" id="admin-login-modal">
+                <motion.div
+                    initial={{ opacity: 0, scale: 0.95, y: 10 }}
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.95, y: 10 }}
+                    transition={{ duration: 0.2 }}
+                    className="relative w-full max-w-md overflow-hidden bg-white rounded-3xl shadow-2xl border border-slate-155 p-8"
+                >
+                  {/* Close Button */}
+                  <button
+                      onClick={() => {
+                        setShowAdminLoginModal(false);
+                        setLoginError("");
+                        setAdminPinInput("");
+                      }}
+                      className="absolute top-5 right-5 p-2 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-50 transition-colors"
+                      title="Discard login"
+                  >
+                    <X className="h-5 w-5" />
+                  </button>
+
+                  <div className="text-center">
+                    <div className="h-14 w-14 bg-teal-50 text-teal-600 rounded-2xl flex items-center justify-center mx-auto mb-5 shadow-inner">
+                      <Lock className="h-6 w-6" />
+                    </div>
+                    <h3 className="text-xl font-bold text-slate-900 mb-1.5" id="modal-title">Admin Gatekeeper</h3>
+                    <p className="text-xs text-slate-500 leading-relaxed max-w-xs mx-auto mb-6">
+                      Please verify your credentials to unlock the GK Mirai Managing Committee suite tools.
+                    </p>
+                  </div>
+
+                  <form
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        handleAdminLogin(adminPinInput);
+                      }}
+                      className="space-y-4"
+                  >
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">
+                        Security Passcode PIN
+                      </label>
+                      <input
+                          type="password"
+                          value={adminPinInput}
+                          onChange={(e) => {
+                            setAdminPinInput(e.target.value);
+                            if (loginError) setLoginError("");
+                          }}
+                          placeholder="••••"
+                          className="w-full text-center tracking-widest text-lg font-bold py-3.5 px-4 rounded-xl border border-slate-200 focus:outline-hidden focus:border-teal-500 focus:ring-1 focus:ring-teal-500/20 placeholder-slate-300"
+                          autoFocus
+                          required
+                      />
+                    </div>
+
+                    {loginError && (
+                        <p className="text-xs font-semibold text-rose-600 text-center animate-shake" id="login-error-text">
+                          {loginError}
+                        </p>
+                    )}
+
+                    <div className="bg-slate-50/80 rounded-xl p-3 border border-slate-100 flex items-start gap-2 text-left">
+                      <span className="text-xs text-slate-400 font-mono select-none">💡</span>
+                      <div className="text-slate-500 text-[11px] leading-relaxed">
+                        <strong>Reviewer Access PIN:</strong> Enter <span className="font-mono bg-teal-50 text-teal-700 font-semibold px-1 rounded-sm">1234</span> or <span className="font-mono bg-teal-50 text-teal-700 font-semibold px-1 rounded-sm">admin</span> to sign in instantly.
+                      </div>
+                    </div>
+
+                    <div className="flex gap-3 pt-2">
+                      <button
+                          type="button"
+                          onClick={() => {
+                            setShowAdminLoginModal(false);
+                            setLoginError("");
+                            setAdminPinInput("");
+                          }}
+                          className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl text-xs uppercase tracking-wider transition-all"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                          type="submit"
+                          className="flex-1 py-3 bg-teal-600 hover:bg-teal-700 text-white font-semibold rounded-xl text-xs uppercase tracking-wider shadow-sm shadow-teal-600/10 transition-all"
+                      >
+                        Authorize
+                      </button>
+                    </div>
+                  </form>
+                </motion.div>
+              </div>
+          )}
+        </AnimatePresence>
       </div>
   );
 }
