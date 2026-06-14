@@ -49,6 +49,7 @@ export interface ResidentUnit {
   duesStatus: "Paid" | "Unpaid";
   duesAmount: number;
   lastPaymentDate?: string;
+  password?: string;
 }
 
 export interface Facility {

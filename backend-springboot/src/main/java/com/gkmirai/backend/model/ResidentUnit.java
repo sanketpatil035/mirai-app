@@ -40,4 +40,7 @@ public class ResidentUnit {
 
     @Column(name = "last_payment_date")
     private String lastPaymentDate; // YYYY-MM-DD
+
+    @Column(name = "password", nullable = false)
+    private String password;
 }

@@ -26,6 +26,7 @@ import { LandingPage } from "./components/LandingPage";
 import { AboutUs } from "./components/AboutUs";
 import { ResidentPortal } from "./components/ResidentPortal";
 import { AdminDashboard } from "./components/AdminDashboard";
+import { ResidentLogin } from "./components/ResidentLogin";
 import { api } from "./lib/api";
 
 export default function App() {
@@ -40,6 +41,27 @@ export default function App() {
 
   // Active simulated Resident context unit
   const [activeUnitNo, setActiveUnitNo] = useState<string>("C-302"); // default
+
+  // Resident Logged-In Security State
+  const [loggedInResident, setLoggedInResident] = useState<ResidentUnit | null>(() => {
+    try {
+      const saved = localStorage.getItem("gkm_logged_resident");
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
+
+  const handleResidentLogin = (resident: ResidentUnit) => {
+    setLoggedInResident(resident);
+    setActiveUnitNo(resident.flatNo);
+    localStorage.setItem("gkm_logged_resident", JSON.stringify(resident));
+  };
+
+  const handleResidentLogout = () => {
+    setLoggedInResident(null);
+    localStorage.removeItem("gkm_logged_resident");
+  };
 
   // Admin Mode state (default false, loaded from localStorage)
   const [isAdmin, setIsAdmin] = useState<boolean>(() => {
@@ -119,6 +141,21 @@ export default function App() {
           setBookings(fetchedBookings);
           setResidents(fetchedResidents);
           setBackendStatus("connected");
+
+          // Sync logged-in resident's model objects with live DB
+          const savedStr = localStorage.getItem("gkm_logged_resident");
+          if (savedStr) {
+            try {
+              const savedObj = JSON.parse(savedStr);
+              const liveMatch = fetchedResidents.find(r => r.flatNo === savedObj.flatNo);
+              if (liveMatch) {
+                setLoggedInResident(liveMatch);
+                setActiveUnitNo(liveMatch.flatNo);
+              }
+            } catch (err) {
+              console.error("Failed to parse saved login", err);
+            }
+          }
         } catch (e) {
           console.error("Backend found online but failed to retrieve collections. Falling back to local state", e);
           setBackendStatus("local_fallback");
@@ -414,15 +451,18 @@ export default function App() {
                 <span className="text-slate-400 text-[11px]">As Acting Identity:</span>
                 <select
                     value={activeUnitNo}
+                    disabled={!!loggedInResident}
                     onChange={(e) => {
-                      setActiveUnitNo(e.target.value);
+                      const targetUnitNo = e.target.value;
+                      setActiveUnitNo(targetUnitNo);
                       // Auto redirect to resident portal if switching flats for direct feedback
                       if (activeTab !== "admin" && activeTab !== "resident") {
                         setActiveTab("resident");
                       }
                     }}
-                    className="bg-slate-850 hover:bg-slate-800 text-white rounded-md border border-slate-700 px-2 py-1 text-[11px] font-mono focus:outline-hidden"
+                    className={`bg-slate-850 hover:bg-slate-800 text-white rounded-md border border-slate-700 px-2 py-1 text-[11px] font-mono focus:outline-hidden ${loggedInResident ? "opacity-60 cursor-not-allowed" : "cursor-pointer"}`}
                     id="header-role-identity-picker"
+                    title={loggedInResident ? "Identity locked during active secure resident session. Sign out of the resident session to change identity." : "Set current acting simulation unit"}
                 >
                   <optgroup label="Select Resident Condo unit">
                     {residents.map(res => (
@@ -459,7 +499,7 @@ export default function App() {
                   <span className="font-sans font-bold text-lg tracking-tight text-slate-900 leading-none">GK Mirai</span>
                   <span className="bg-teal-50 text-teal-800 text-[10px] font-bold px-1.5 py-0.5 rounded-sm border border-teal-200/50">SMART</span>
                 </div>
-                <span className="text-[10px] tracking-widest text-slate-400 font-mono uppercase">Punawale</span>
+                <span className="text-[10px] tracking-widest text-slate-400 font-mono uppercase">Living Habitat</span>
               </div>
             </div>
 
@@ -653,16 +693,50 @@ export default function App() {
                     exit={{ opacity: 0, y: -15 }}
                     transition={{ duration: 0.25 }}
                 >
-                  <ResidentPortal
-                      complaints={complaints}
-                      bookings={bookings}
-                      notices={notices}
-                      residents={residents}
-                      activeUnitNo={activeUnitNo}
-                      onAddComplaint={handleAddComplaint}
-                      onAddBooking={handleAddBooking}
-                      onPayDues={handlePayDues}
-                  />
+                  {loggedInResident ? (
+                      <>
+                        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6">
+                          <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                            <div className="flex items-center gap-3">
+                              <div className="h-10 w-10 bg-teal-50 text-teal-600 rounded-xl flex items-center justify-center font-bold">
+                                {loggedInResident.flatNo}
+                              </div>
+                              <div>
+                                <h4 className="text-xs font-bold text-slate-900">
+                                  Current Resident Session: {loggedInResident.ownerName} ({loggedInResident.status})
+                                </h4>
+                                <p className="text-[10px] text-slate-500 font-mono mt-0.5">
+                                  Passcode authenticated & encrypted via Spring Boot DB
+                                </p>
+                              </div>
+                            </div>
+                            <button
+                                onClick={handleResidentLogout}
+                                className="text-xs font-semibold px-4 py-2 bg-white rounded-xl border border-slate-200 text-slate-600 hover:text-rose-600 hover:border-rose-200 transition-colors cursor-pointer shadow-xs"
+                            >
+                              Sign Out Session
+                            </button>
+                          </div>
+                        </div>
+                        <ResidentPortal
+                            complaints={complaints}
+                            bookings={bookings}
+                            notices={notices}
+                            residents={residents}
+                            activeUnitNo={activeUnitNo}
+                            onAddComplaint={handleAddComplaint}
+                            onAddBooking={handleAddBooking}
+                            onPayDues={handlePayDues}
+                        />
+                      </>
+                  ) : (
+                      <ResidentLogin
+                          residents={residents}
+                          backendStatus={backendStatus}
+                          onLoginSuccess={handleResidentLogin}
+                          activeUnitNo={activeUnitNo}
+                      />
+                  )}
                 </motion.div>
             )}
 
@@ -722,7 +796,7 @@ export default function App() {
                 <span className="font-bold text-base tracking-tight">GK Mirai</span>
               </div>
               <p className="text-xs leading-relaxed max-w-xs">
-                GK Mirai is an ideal place to live in Pune. The neighbourhood provides easy access to essential amenities such as schools, hospitals, shopping centres and other entertainment options while being well connected to the rest of the city and providing access to several public transport systems and other social infrastructure.
+                Bengaluru's premium smart residential housing society, integrating world-class green solar energy grids, efficient garbage compositing, and modern automated gate operations.
               </p>
               <p className="text-[10px] font-mono tracking-widest uppercase text-teal-400">Awarded Model Habitat</p>
             </div>
@@ -757,9 +831,9 @@ export default function App() {
               <div className="space-y-2 leading-relaxed">
                 <p className="flex items-start gap-2">
                   <MapPin className="h-4 w-4 text-teal-500 shrink-0 mt-0.5" />
-                  <span>GK Mirai, Punawale High St, near Zudio, Punvale Bazar, Punawale, Pimpri-Chinchwad, Maharashtra 411033</span>
+                  <span>GK Mirai Smart Township, Outer Ring Rd, Sarjapur Cross, Bengaluru, Karnataka 560103</span>
                 </p>
-                <p>📞 +91 9800000000</p>
+                <p>📞 +91 98765 00002</p>
                 <p>✉️ administration@gkmirai.com</p>
               </div>
             </div>

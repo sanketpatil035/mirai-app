@@ -259,6 +259,7 @@ public class DataInitializer implements CommandLineRunner {
                     .duesStatus("Paid")
                     .duesAmount(4500)
                     .lastPaymentDate("2026-06-02")
+                    .password("password")
                     .build());
 
             residentUnitRepository.save(ResidentUnit.builder()
@@ -271,6 +272,7 @@ public class DataInitializer implements CommandLineRunner {
                     .duesStatus("Paid")
                     .duesAmount(4500)
                     .lastPaymentDate("2026-06-03")
+                    .password("password")
                     .build());
 
             residentUnitRepository.save(ResidentUnit.builder()
@@ -283,6 +285,7 @@ public class DataInitializer implements CommandLineRunner {
                     .duesStatus("Paid")
                     .duesAmount(4500)
                     .lastPaymentDate("2026-06-01")
+                    .password("password")
                     .build());
 
             residentUnitRepository.save(ResidentUnit.builder()
@@ -294,6 +297,7 @@ public class DataInitializer implements CommandLineRunner {
                     .status("Owner")
                     .duesStatus("Unpaid")
                     .duesAmount(5200)
+                    .password("password")
                     .build());
 
             residentUnitRepository.save(ResidentUnit.builder()
@@ -305,6 +309,7 @@ public class DataInitializer implements CommandLineRunner {
                     .status("Tenant")
                     .duesStatus("Unpaid")
                     .duesAmount(4800)
+                    .password("password")
                     .build());
 
             residentUnitRepository.save(ResidentUnit.builder()
@@ -317,6 +322,7 @@ public class DataInitializer implements CommandLineRunner {
                     .duesStatus("Paid")
                     .duesAmount(4800)
                     .lastPaymentDate("2026-06-05")
+                    .password("password")
                     .build());
 
             residentUnitRepository.save(ResidentUnit.builder()
@@ -328,6 +334,7 @@ public class DataInitializer implements CommandLineRunner {
                     .status("Tenant")
                     .duesStatus("Unpaid")
                     .duesAmount(4200)
+                    .password("password")
                     .build());
 
             residentUnitRepository.save(ResidentUnit.builder()
@@ -340,6 +347,7 @@ public class DataInitializer implements CommandLineRunner {
                     .duesStatus("Paid")
                     .duesAmount(4200)
                     .lastPaymentDate("2026-06-04")
+                    .password("password")
                     .build());
         }
     }

@@ -24,7 +24,8 @@ export const api = {
     async checkBackendStatus(): Promise<boolean> {
         try {
             const res = await fetchWithTimeout(`${API_BASE}/notices`, { method: "GET", timeout: 1500 });
-            return res.ok;
+            const contentType = res.headers.get("content-type") || "";
+            return res.ok && contentType.includes("application/json");
         } catch {
             return false;
         }
@@ -136,6 +137,19 @@ export const api = {
     async getResidentByFlat(flatNo: string): Promise<ResidentUnit> {
         const res = await fetch(`${API_BASE}/residents/flat/${flatNo}`);
         if (!res.ok) throw new Error("Failed to fetch resident details for flat: " + flatNo);
+        return res.json();
+    },
+
+    async loginResident(flatNo: string, password: string): Promise<ResidentUnit> {
+        const res = await fetch(`${API_BASE}/residents/login`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ flatNo, password })
+        });
+        if (!res.ok) {
+            const errMsg = await res.text();
+            throw new Error(errMsg || "Failed to log in");
+        }
         return res.json();
     },
 
